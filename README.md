@@ -37,7 +37,7 @@ that's it. walkovers are dropped, and the streak counter goes up on a win, back 
 ## download data
 
 ```bash
-python download_data.py
+python ./scripts/download_data.py
 ```
 
 this pulls the match csvs from [tennismylife](https://stats.tennismylife.org) into `tml-data/`.

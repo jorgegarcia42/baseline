@@ -1,0 +1,17 @@
+tml-data/
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# notebooks
+.ipynb_checkpoints/
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/
