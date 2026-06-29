@@ -357,12 +357,14 @@ with tab_archive:
         # --- statistics (shown first) ---
         n_total = len(archive)
         n_predicted = int(archive["home_win_prob"].notna().sum())
+        n_unresolved = int(archive["home_win_prob"].isna().sum())
         finished = archive[archive["finished"]]
         n_finished = len(finished)
+        n_inprogress = n_total - n_finished
         n_correct = int((archive["_class"] == "correct").sum())
         n_wrong = int((archive["_class"] == "wrong").sum())
         n_other = int((archive["_class"] == "other").sum())
-        decided = n_correct + n_wrong
+        decided = n_correct + n_wrong  # the n behind accuracy / brier / log loss
         acc = (n_correct / decided) if decided else None
 
         # error metrics over normally-finished & predicted matches (the same
@@ -383,40 +385,48 @@ with tab_archive:
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Recorded matches", n_total)
         m2.metric("Predicted", n_predicted)
-        m3.metric("Finished", n_finished)
-        m4.metric("Retired / other", n_other)
+        m3.metric("Unresolved",
+                  n_unresolved,
+                  help="matches we couldn't predict because a player isn't "
+                       "in our DB. Includes finished ones we can't grade.")
+        m4.metric("In progress", n_inprogress)
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Correct", n_correct)
-        m2.metric("Wrong", n_wrong)
-        m3.metric("Accuracy",
+        m1.metric("Finished", n_finished)
+        m2.metric("Retired / other", n_other)
+        m3.metric("Graded (decided)",
+                  decided,
+                  help="normally-finished & predicted matches — the sample "
+                       "size behind accuracy / brier / log loss.")
+        m4.metric("Correct", n_correct)
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Wrong", n_wrong)
+        m2.metric("Accuracy",
                   "—" if acc is None else f"{acc*100:.1f}%",
-                  help="share of normally-finished, predicted matches where "
-                       "the favorite won (excludes retirements/walkovers)")
-        m4.metric("Brier",
+                  help="share of graded matches where the favorite won.")
+        m3.metric("Brier",
                   "—" if brier is None else f"{brier:.3f}",
-                  delta=None,
                   help="mean squared error of the predicted probability vs "
                        "the result (0 = perfect, 0.25 = useless). Lower is "
                        "better; rewards calibrated probabilities, not just "
                        "right calls.")
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Log loss",
+        m4.metric("Log loss",
                   "—" if logloss is None else f"{logloss:.3f}",
                   help="negative log-likelihood of the outcomes under the "
                        "model's probabilities. Lower is better; penalizes "
                        "confident-and-wrong hard.")
-        m2.metric("Avg confidence",
+        m1, m2 = st.columns(2)
+        m1.metric("Avg confidence",
                   "—" if avg_conf is None else f"{avg_conf*100:.1f}%",
                   help="mean probability the model assigned to its pick "
                        "(max of the two win probs).")
-        m3.metric("Calibration (acc − conf)",
+        m2.metric("Calibration (acc − conf)",
                   "—" if calib is None else f"{calib*100:+.1f} pp",
                   help="positive = underconfident (right more than it admits), "
                        "negative = overconfident. Near zero = well calibrated.")
         st.caption(
             "Green = predicted correctly · Red = predicted wrongly · "
             "Grey = retirement / walkover / canceled (no clean result). "
-            "Brier / log loss over finished & predicted matches.")
+            "Accuracy / brier / log loss are over the graded matches only.")
 
         # --- results archive (below the stats) ---
         st.markdown("#### Results")
