@@ -3,6 +3,7 @@
     streamlit run web/app.py
 """
 import sys
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 # ensure repo root is importable (for `web.*` and `src.*`) regardless of cwd
@@ -16,6 +17,8 @@ import streamlit as st
 from web.data import (load_players, load_matches, surface_columns,
                       MATCHES_PATH, RATINGS_AS_OF)
 from web.predict import predict_match
+from web.live import (fetch_live_atp, predict_live, upsert_archive,
+                      load_archive)
 from src.lookup import find_player, elo_over_time, elo_series
 
 st.set_page_config(page_title="Baseline", page_icon="🎾", layout="wide")
@@ -84,7 +87,8 @@ with st.sidebar:
         "each player's latest known values."
     )
 
-tab_board, tab_player, tab_predict = st.tabs(["Leaderboard", "Player", "Predict"])
+tab_board, tab_player, tab_predict, tab_live, tab_archive = st.tabs(
+    ["Leaderboard", "Player", "Predict", "Live", "Archive"])
 
 
 # ----------------------------------------------------------------------- Tab 1
@@ -218,3 +222,184 @@ with tab_predict:
             st.caption(
                 f"Ratings as of {RATINGS_AS_OF}. Rank / age / hand / panic use "
                 "each player's latest known values.")
+
+
+# ----------------------------------------------------------------------- Tab 4
+with tab_live:
+    st.subheader("Live ATP matches")
+    st.caption(
+        "Live ATP singles pulled from Sofascore every 2 minutes and scored "
+        "with the current model. Each fetch is saved to the Archive tab.")
+    st.info(
+        "Some matches can't be predicted because of not having enough "
+        "information about some players.")
+
+    @st.fragment(run_every=timedelta(minutes=2))
+    def _live_loop():
+        # fetch -> predict -> persist -> render, on a 2-minute schedule. runs
+        # once immediately on load, then every 2 min while the app is open.
+        try:
+            matches = fetch_live_atp()
+        except RuntimeError as exc:
+            st.error(str(exc))
+            return
+        except Exception as exc:
+            st.warning(f"Sofascore request failed: {exc}")
+            return
+        if not matches:
+            st.info("No live ATP matches right now.")
+            return
+        preds = predict_live(matches)
+        upsert_archive(preds)
+        st.session_state["live_preds"] = preds
+        st.session_state["live_fetched_at"] = datetime.now(timezone.utc)
+        n_pred = int(preds["home_win_prob"].notna().sum())
+        last = st.session_state["live_fetched_at"].strftime("%H:%M:%S UTC")
+        st.success(f"{len(matches)} live ATP match(es); {n_pred} predicted. "
+                   f"Last fetch: {last}")
+
+        show = preds.copy()
+        show["match"] = show["home_name"] + "  vs  " + show["away_name"]
+        show["predicted?"] = show["home_win_prob"].notna()
+        def _prob(p):
+            return "—" if pd.isna(p) else f"{p*100:.1f}%"
+        show["home_win"] = show["home_win_prob"].map(_prob)
+        show["away_win"] = show["away_win_prob"].map(_prob)
+        def _winner(row):
+            if pd.isna(row["home_win_prob"]):
+                return "—"
+            return row["home_name"] if row["home_win_prob"] >= 0.5 \
+                else row["away_name"]
+        show["expected_winner"] = show.apply(_winner, axis=1)
+        show["score"] = (show["home_score"].astype(str) + "–"
+                         + show["away_score"].astype(str))
+        cols = ["tournament", "match", "score", "status", "surface", "level",
+                "round", "home_win", "away_win", "expected_winner",
+                "predicted?"]
+        st.dataframe(show[cols], use_container_width=True, hide_index=True)
+
+        unresolved = preds[preds["home_win_prob"].isna()]
+        if not unresolved.empty:
+            missing = []
+            for _, r in unresolved.iterrows():
+                if pd.isna(r["home_id"]):
+                    missing.append(r["home_name"])
+                if pd.isna(r["away_id"]):
+                    missing.append(r["away_name"])
+            with st.expander(
+                f"Unresolved players ({len(missing)}) — not in our DB"):
+                st.dataframe(pd.DataFrame({"player": missing}),
+                             use_container_width=True, hide_index=True)
+
+    _live_loop()
+
+
+# ----------------------------------------------------------------------- Tab 5
+with tab_archive:
+    st.subheader("Prediction archive")
+    st.caption(
+        "One row per match, accumulated over time. Scores and the actual "
+        "winner are filled in once a match finishes.")
+    archive = load_archive()
+    if archive.empty:
+        st.caption("No matches recorded yet. The Live tab records predictions "
+                   "automatically every 2 minutes.")
+    else:
+        archive = archive.copy()
+        # robust boolean finished mask (column may be missing/None on old data)
+        if "finished" in archive.columns:
+            archive["finished"] = archive["finished"].fillna(False).astype(bool)
+        else:
+            archive["finished"] = False
+        if "status_code" not in archive.columns:
+            archive["status_code"] = None
+
+        def _fmt(p):
+            return "—" if pd.isna(p) else f"{p*100:.1f}%"
+        archive["match"] = archive["home_name"] + "  vs  " + archive["away_name"]
+        archive["home_win"] = archive["home_win_prob"].map(_fmt)
+        archive["away_win"] = archive["away_win_prob"].map(_fmt)
+        archive["predicted_winner"] = archive.apply(
+            lambda r: "—" if pd.isna(r["home_win_prob"])
+            else (r["home_name"] if r["home_win_prob"] >= 0.5
+                  else r["away_name"]), axis=1)
+        archive["score"] = archive.apply(
+            lambda r: (f"{int(r['home_score'])}–{int(r['away_score'])}"
+                       if bool(r.get("finished")) and pd.notna(r["home_score"])
+                       and pd.notna(r["away_score"]) else "—"),
+            axis=1)
+        archive["actual_winner"] = archive["actual_winner"].fillna("—")
+
+        # classify each finished match for stats + row coloring.
+        #   correct : normal finish (status_code 100) and favorite won
+        #   wrong   : normal finish and favorite lost
+        #   other   : retirement / walkover / canceled (no clean result)
+        def _class(r):
+            if not r["finished"] or pd.isna(r["home_win_prob"]):
+                return "pending"
+            if r["status_code"] != 100:
+                return "other"
+            return "correct" if r["predicted_winner"] == r["actual_winner"] \
+                else "wrong"
+        archive["_class"] = archive.apply(_class, axis=1)
+
+        # --- statistics (shown first) ---
+        n_total = len(archive)
+        n_predicted = int(archive["home_win_prob"].notna().sum())
+        finished = archive[archive["finished"]]
+        n_finished = len(finished)
+        n_correct = int((archive["_class"] == "correct").sum())
+        n_wrong = int((archive["_class"] == "wrong").sum())
+        n_other = int((archive["_class"] == "other").sum())
+        decided = n_correct + n_wrong
+        acc = (n_correct / decided) if decided else None
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Recorded matches", n_total)
+        m2.metric("Predicted", n_predicted)
+        m3.metric("Finished", n_finished)
+        m4.metric("Retired / other", n_other)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Correct", n_correct)
+        m2.metric("Wrong", n_wrong)
+        m3.metric("Accuracy",
+                  "—" if acc is None else f"{acc*100:.1f}%",
+                  help="share of normally-finished, predicted matches where "
+                       "the favorite won (excludes retirements/walkovers)")
+        st.caption(
+            "Green = predicted correctly · Red = predicted wrongly · "
+            "Grey = retirement / walkover / canceled (no clean result).")
+
+        # --- results archive (below the stats) ---
+        st.markdown("#### Results")
+        view = st.radio("View", ["All", "Finished", "In progress"],
+                        horizontal=True)
+        shown = archive if view == "All" else (
+            archive[archive["finished"]] if view == "Finished"
+            else archive[~archive["finished"]])
+
+        sort_col = "last_updated" if "last_updated" in shown.columns \
+            else shown.columns[0]
+        shown = shown.sort_values(sort_col, ascending=False,
+                                  na_position="last")
+        cols = ["match", "tournament", "surface", "level", "round",
+                "predicted_winner", "home_win", "away_win",
+                "home_fair_odds", "away_fair_odds",
+                "status", "score", "actual_winner", "last_updated"]
+        display = shown[[c for c in cols if c in shown.columns]].copy()
+        if display.empty:
+            st.caption("No matches in this view.")
+        else:
+            classes = shown["_class"].reset_index(drop=True)
+            color_map = {"correct": "#b7e4b7", "wrong": "#f4b4b4",
+                         "other": "#cfcfcf"}
+
+            def _style(row):
+                bg = color_map.get(classes.iloc[row.name], "")
+                return [f"background-color: {bg};" if bg else ""
+                        for _ in row]
+
+            styled = (display.reset_index(drop=True).style
+                      .apply(_style, axis=1))
+            st.dataframe(styled, use_container_width=True, hide_index=True)
+            st.caption(f"{len(shown)} match(es).")

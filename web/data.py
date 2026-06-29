@@ -20,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 PLAYERS_PATH = str(DATA_DIR / "players.parquet")
 MATCHES_PATH = str(DATA_DIR / "elo_matches.parquet")
 MODEL_PATH = str(DATA_DIR / "model.joblib")
+PREDICTIONS_PATH = str(DATA_DIR / "predictions.parquet")
 
 # label shown across the app; the snapshot is end-of-2026 ratings
 RATINGS_AS_OF = "end-2026"
