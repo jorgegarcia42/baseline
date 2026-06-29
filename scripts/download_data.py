@@ -8,9 +8,12 @@ files = requests.get(
 ).json()["files"]
 
 for file in files:
-    print(f"Downloading {file['name']}")
+    name = file["name"]
+    print(f"Downloading {name}")
     data = requests.get(file["url"])
-    with open(f"tml-data/{file['name']}", "wb") as f:
+    out = f"tml-data/{name}"
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, "wb") as f:
         f.write(data.content)
 
 print("Done")

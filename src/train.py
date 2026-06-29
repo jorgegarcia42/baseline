@@ -71,6 +71,25 @@ def summarize(models: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def fit_full(df: pd.DataFrame, C: float = 1.0):
+    # fit the full pipeline on ALL available data and return it, for saving / serving.
+    # df = features.parquet as loaded (with date + ids). informative cols are dropped;
+    # the ColumnTransformer selects numeric_features + categorical_features and
+    # ignores the diffs (remainder='drop'), same as run_full_logistic.
+    df = df.drop(['player1_id', 'player2_id', 'date'], axis=1)
+    X = df.drop('player1_won', axis=1)
+    y = df['player1_won']
+    model = Pipeline([
+        ('pre', ColumnTransformer([
+            ('num', StandardScaler(), numeric_features),
+            ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features),
+        ])),
+        ('clf', LogisticRegression(penalty='l2', C=C, max_iter=1000)),
+    ])
+    model.fit(X, y)
+    return model
+
+
 def run_full_logistic(train_folds, test_folds, C: float = 1.0):
     # regularized logistic on all features. the ColumnTransformer (scaler + one-hot) is built fresh per fold so it fits on that fold's train only.
     # handle_unknown='ignore' covers categories that only appear in later test years.
