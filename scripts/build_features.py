@@ -93,6 +93,7 @@ def build_features(matches_elo_path: str, panic_path: str, output: str) -> None:
             'player2_rank': player2_rank,  # feature
             'player1_surface_elo': player1_surface_elo,  # feature
             'player2_surface_elo': player2_surface_elo,  # feature
+            'surface_elo_diff': player1_surface_elo - player2_surface_elo,  # feature
             'player1_elo': player1_elo,  # feature
             'player2_elo': player2_elo,  # feature
             'player1_streak': player1_streak,  # feature
