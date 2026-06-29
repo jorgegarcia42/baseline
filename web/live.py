@@ -57,8 +57,12 @@ def _name_index():
     # normalized display name -> player_id, built once and cached by streamlit.
     players = load_players()
     players = players[~players["name"].str.startswith("id:", na=False)]
-    players = players.dropna(subset=["name"])
+    players = players.dropna(subset=["name", "player_id"])
     players["norm"] = players["name"].map(_norm)
+    # the db occasionally has duplicate names (including junk rows with a null
+    # id); keep the highest-rated real row per normalized name.
+    players = (players.sort_values("elo", ascending=False)
+                      .drop_duplicates("norm", keep="first"))
     return players.set_index("norm")["player_id"].to_dict(), \
         players.set_index("player_id")["name"].to_dict()
 
@@ -327,10 +331,15 @@ def upsert_archive(live_df: pd.DataFrame,
         else:
             rows[eid] = _archive_row(m, now_iso)
 
-    # finalize tracked matches that dropped off the live feed
+    # finalize tracked matches that dropped off the live feed. re-finalize
+    # finished rows too if they have no actual winner — Sofascore sometimes
+    # flips status to "Ended" before the score field updates, leaving a tied
+    # / null score that needs a follow-up fetch to correct.
     to_finalize = []
     for eid, r in rows.items():
-        if r.get("finished") or eid in live_ids:
+        if eid in live_ids:
+            continue
+        if r.get("finished") and r.get("actual_winner"):
             continue
         try:
             age = now_dt - datetime.fromisoformat(r.get("last_updated"))

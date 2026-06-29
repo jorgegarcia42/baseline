@@ -344,6 +344,9 @@ with tab_archive:
         def _class(r):
             if not r["finished"] or pd.isna(r["home_win_prob"]):
                 return "pending"
+            if r["actual_winner"] in (None, "—", "") or \
+                    pd.isna(r["actual_winner"]):
+                return "pending"  # finished but score not captured yet
             if r["status_code"] != 100:
                 return "other"
             return "correct" if r["predicted_winner"] == r["actual_winner"] \
