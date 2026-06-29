@@ -2,6 +2,11 @@ import pandas as pd
 import random
 
 
+def normalize_hand(s: pd.Series) -> pd.Series:
+    # collapse to {R, L, U}; everything that isn't a clean R/L (NaN, 'A', etc.) -> 'U'
+    return s.where(s.isin(['R', 'L']), 'U').astype('object')
+
+
 def build_features(matches_elo_path: str, panic_path: str, output: str) -> None:
     random.seed(69)
 
@@ -33,6 +38,9 @@ def build_features(matches_elo_path: str, panic_path: str, output: str) -> None:
     age_med = full['winner_age'].median()
     full['winner_age'] = full['winner_age'].fillna(age_med)
     full['loser_age'] = full['loser_age'].fillna(age_med)
+    # normalize hand to {R, L, U}: U covers NaN and the degenerate 'A'
+    full['winner_hand'] = normalize_hand(full['winner_hand'])
+    full['loser_hand'] = normalize_hand(full['loser_hand'])
     matches = []
 
     for _, match in full.iterrows():
