@@ -12,6 +12,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import pandas as pd
+import numpy as np
 import streamlit as st
 
 from web.data import (load_players, load_matches, surface_columns,
@@ -364,21 +365,58 @@ with tab_archive:
         decided = n_correct + n_wrong
         acc = (n_correct / decided) if decided else None
 
+        # error metrics over normally-finished & predicted matches (the same
+        # set accuracy uses — excludes retirements/walkovers). compare the
+        # model's home-win probability to the actual outcome (home won = 1).
+        fp = archive[archive["_class"].isin(["correct", "wrong"])].copy()
+        if not fp.empty:
+            fp["_y"] = (fp["home_name"] == fp["actual_winner"]).astype(int)
+            p = fp["home_win_prob"].clip(1e-6, 1 - 1e-6)
+            brier = float(np.mean((p - fp["_y"]) ** 2))
+            logloss = float(-np.mean(
+                fp["_y"] * np.log(p) + (1 - fp["_y"]) * np.log(1 - p)))
+            avg_conf = float(np.mean(np.maximum(p, 1 - p)))
+            calib = acc - avg_conf if acc is not None else None
+        else:
+            brier = logloss = avg_conf = calib = None
+
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Recorded matches", n_total)
         m2.metric("Predicted", n_predicted)
         m3.metric("Finished", n_finished)
         m4.metric("Retired / other", n_other)
-        m1, m2, m3 = st.columns(3)
+        m1, m2, m3, m4 = st.columns(4)
         m1.metric("Correct", n_correct)
         m2.metric("Wrong", n_wrong)
         m3.metric("Accuracy",
                   "—" if acc is None else f"{acc*100:.1f}%",
                   help="share of normally-finished, predicted matches where "
                        "the favorite won (excludes retirements/walkovers)")
+        m4.metric("Brier",
+                  "—" if brier is None else f"{brier:.3f}",
+                  delta=None,
+                  help="mean squared error of the predicted probability vs "
+                       "the result (0 = perfect, 0.25 = useless). Lower is "
+                       "better; rewards calibrated probabilities, not just "
+                       "right calls.")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Log loss",
+                  "—" if logloss is None else f"{logloss:.3f}",
+                  help="negative log-likelihood of the outcomes under the "
+                       "model's probabilities. Lower is better; penalizes "
+                       "confident-and-wrong hard.")
+        m2.metric("Avg confidence",
+                  "—" if avg_conf is None else f"{avg_conf*100:.1f}%",
+                  help="mean probability the model assigned to its pick "
+                       "(max of the two win probs).")
+        m3.metric("Calibration (acc − conf)",
+                  "—" if calib is None else f"{calib*100:+.1f} pp",
+                  help="positive = underconfident (right more than it admits), "
+                       "negative = overconfident. Near zero = well calibrated.")
         st.caption(
             "Green = predicted correctly · Red = predicted wrongly · "
-            "Grey = retirement / walkover / canceled (no clean result).")
+            "Grey = retirement / walkover / canceled (no clean result). "
+            "Brier / log loss over finished & predicted matches.")
 
         # --- results archive (below the stats) ---
         st.markdown("#### Results")
