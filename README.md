@@ -45,13 +45,13 @@ R_W = R_W + K * (1 - E_W)
 R_L = R_L - K * E_L
 ```
 
-ratings decay toward 1500 by **45% per year** (`yearly_decay = 0.45`, tunable), mean-reverting and compounded per year crossed, applied at each year boundary:
+ratings decay toward 1500 by **45% per year** (`yearly_decay = 0.45`, tunable), mean-reverting and prorated by month. at each month boundary the elapsed months since the last boundary drive the pull:
 
 ```
-R = 1500 + (R - 1500) * (1 - yearly_decay) ** years_passed
+R = 1500 + (R - 1500) * (1 - yearly_decay) ** (months_elapsed / 12)
 ```
 
-so old form fades and inactive players drift back to the mean (half the above-par rating is gone in ~1 year, ~90% within 3). elo is threaded across years via a `state` dict: 2010-2012 is a warmup window (rows discarded, ratings carried forward into 2013), real matches run 2013-2026.
+so decay is continuous across the year instead of one year-end jump — old form fades and inactive players drift back to the mean (half the above-par rating is gone in ~1 year, ~90% within 3). elo is threaded across months via a `state` dict: 2010-2012 is a warmup window (rows discarded, ratings carried forward into 2013), real matches run 2013-2026.
 
 walkovers are dropped. the streak counter goes up on a win, back to 0 on a loss. outputs: `elo_matches.parquet` (per-match pre-match elo/streak) and `elo_players.parquet` (one row per player, final elo + per-surface elo, used for the ranking print).
 
