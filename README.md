@@ -109,4 +109,4 @@ builds the elo and panic tables, prints the top 20 by elo, builds `data/features
 
 ---
 
-the thinking behind it lives on my blog — [jorge.n0.nu](https://jorge.n0.nu).
+the thinking behind it lives on my [medium](https://medium.com/@jorubix).
