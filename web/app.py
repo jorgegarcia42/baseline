@@ -16,7 +16,7 @@ import streamlit as st
 from web.data import (load_players, load_matches, surface_columns,
                       MATCHES_PATH, RATINGS_AS_OF)
 from web.predict import predict_match
-from src.lookup import find_player, elo_over_time
+from src.lookup import find_player, elo_over_time, elo_series
 
 st.set_page_config(page_title="Baseline", page_icon="🎾", layout="wide")
 
@@ -116,6 +116,19 @@ with tab_board:
                 "streak", "rank", "hand"]
         show = board[cols].rename(columns={sort_col: f"{surf_filter} elo"})
     st.dataframe(show, use_container_width=True, hide_index=True)
+
+    # elo trajectory of the current top players, using the same ranking basis
+    chart_n = st.slider("Chart top", min_value=2, max_value=15, value=8,
+                        step=1, key="board_chart_n")
+    chart_ids = board["player_id"].head(chart_n).tolist()
+    chart_names = board.set_index("player_id")["name"].head(chart_n).to_dict()
+    chart_surface = None if surf_filter == "Overall elo" else surf_filter
+    series = elo_series(MATCHES_PATH, chart_ids, surface=chart_surface)
+    series = series.rename(columns=chart_names)
+    if series.empty:
+        st.caption("No match history to chart.")
+    else:
+        st.line_chart(series, use_container_width=True)
 
 
 # ----------------------------------------------------------------------- Tab 2

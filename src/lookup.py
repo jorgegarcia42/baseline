@@ -16,6 +16,41 @@ def find_player(matches_path: str, query: str) -> pd.DataFrame:
     return hit.sort_values('name').reset_index(drop=True)
 
 
+def elo_series(matches_path: str, player_ids, surface=None) -> pd.DataFrame:
+    # wide pre-match elo time series for a set of players: datetime index, one
+    # column per player_id. general elo if surface is None, else that surface's
+    # elo track (only matches on that surface contribute; gaps forward-filled).
+    if surface is None:
+        df = pd.read_parquet(matches_path, columns=[
+            'tourney_date', 'winner_id', 'loser_id', 'w_elo_pre', 'l_elo_pre'])
+        w = df[['tourney_date', 'winner_id', 'w_elo_pre']].rename(
+            columns={'winner_id': 'player_id', 'w_elo_pre': 'elo'})
+        l = df[['tourney_date', 'loser_id', 'l_elo_pre']].rename(
+            columns={'loser_id': 'player_id', 'l_elo_pre': 'elo'})
+    else:
+        df = pd.read_parquet(matches_path, columns=[
+            'tourney_date', 'surface', 'winner_id', 'loser_id',
+            'w_surface_elo_pre', 'l_surface_elo_pre'])
+        df = df[df['surface'] == surface]
+        w = df[['tourney_date', 'winner_id', 'w_surface_elo_pre']].rename(
+            columns={'winner_id': 'player_id', 'w_surface_elo_pre': 'elo'})
+        l = df[['tourney_date', 'loser_id', 'l_surface_elo_pre']].rename(
+            columns={'loser_id': 'player_id', 'l_surface_elo_pre': 'elo'})
+
+    pid_set = set(player_ids)
+    long = pd.concat([w, l], ignore_index=True)
+    long = long[long['player_id'].isin(pid_set)]
+    long['date'] = pd.to_datetime(long['tourney_date'].astype(str), format='%Y%m%d')
+    # keep the latest pre-match elo per player per day (a player can play
+    # multiple matches in a day)
+    long = (long.sort_values(['player_id', 'date'])
+            .drop_duplicates(['player_id', 'date'], keep='last'))
+    pivot = (long.pivot(index='date', columns='player_id', values='elo')
+             .sort_index())
+    # monthly sampling, forward-filled so lines are continuous across gaps
+    return pivot.resample('MS').last().ffill()
+
+
 def elo_over_time(matches_path: str, player_id: str) -> pd.DataFrame:
     # pre-match general + surface elo for one player, one row per match they played,
     # in chronological order. the elo value is the pre-match elo (before that match's

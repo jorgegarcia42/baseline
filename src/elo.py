@@ -42,12 +42,12 @@ def add_elo_and_streaks(
         surface_elo_dict = {k: dict(v)
                             for k, v in state['surface_elo'].items()}
         streak_dict = dict(state['streak'])
-        current_year = state.get('current_year')
+        current_ym = state.get('current_ym')
     else:
         elo_dict = {}
         surface_elo_dict = {}   # {player_id: {surface: elo}}
         streak_dict = {}
-        current_year = None
+        current_ym = None
     retention = 1 - yearly_decay
 
     w_elo_pre_list = []
@@ -72,19 +72,22 @@ def add_elo_and_streaks(
         round = row['round']
         surface = row['surface']
 
-        # year boundary: decay every rating toward start_elo (compounded per year)
-        row_year = int(row['tourney_date']) // 10000
-        if current_year is None:
-            current_year = row_year
-        elif row_year > current_year:
-            factor = retention ** (row_year - current_year)
+        # month boundary: decay every rating toward start_elo, prorated by the
+        # number of months elapsed (yearly_decay is the annual rate, applied as
+        # retention ** (months / 12) so it's smooth across the year).
+        td = int(row['tourney_date'])
+        row_ym = (td // 10000) * 12 + ((td // 100) % 100) - 1
+        if current_ym is None:
+            current_ym = row_ym
+        elif row_ym > current_ym:
+            factor = retention ** ((row_ym - current_ym) / 12)
             for k in elo_dict:
                 elo_dict[k] = start_elo + (elo_dict[k] - start_elo) * factor
             for surfaces in surface_elo_dict.values():
                 for s in surfaces:
                     surfaces[s] = start_elo + \
                         (surfaces[s] - start_elo) * factor
-            current_year = row_year
+            current_ym = row_ym
 
         # init general elo + streak on first sight
         if winner not in elo_dict:
@@ -144,6 +147,6 @@ def add_elo_and_streaks(
         'elo': elo_dict,
         'surface_elo': surface_elo_dict,
         'streak': streak_dict,
-        'current_year': current_year,
+        'current_ym': current_ym,
     }
     return df, state
