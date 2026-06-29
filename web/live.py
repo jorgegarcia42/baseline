@@ -7,6 +7,7 @@ isn't installed, live fetch degrades gracefully (the archive still works).
 """
 from __future__ import annotations
 
+import os
 import unicodedata
 import re
 from datetime import datetime, timezone, timedelta
@@ -17,6 +18,20 @@ from web.data import load_players, PREDICTIONS_PATH
 from web.predict import predict_match
 
 LIVE_URL = "https://api.sofascore.com/api/v1/sport/tennis/events/live"
+
+
+def _proxies() -> dict | None:
+    """Proxy config for Sofascore, from env. Sofascore/Akamai blocks
+    datacenter IPs by reputation, so on a VPS you need a residential proxy.
+    Set SOFASCORE_PROXY (or the standard HTTPS_PROXY) to a URL like
+    http://user:pass@host:port — rotating/residential recommended.
+    """
+    url = (os.environ.get("SOFASCORE_PROXY")
+           or os.environ.get("HTTPS_PROXY")
+           or os.environ.get("https_proxy"))
+    if not url:
+        return None
+    return {"http": url, "https": url}
 
 # Sofascore roundInfo.round = number of matches played in that round, so:
 ROUND_BY_SIZE = {1: "F", 2: "SF", 4: "QF", 8: "R16",
@@ -110,7 +125,8 @@ def fetch_live_atp() -> list[dict]:
         raise RuntimeError(
             "curl_cffi is required to fetch live matches from Sofascore. "
             "Install it with `pip install curl_cffi`.")
-    resp = requests.get(LIVE_URL, impersonate="chrome", timeout=25)
+    resp = requests.get(LIVE_URL, impersonate="chrome",
+                        proxies=_proxies(), timeout=25)
     resp.raise_for_status()
     events = resp.json().get("events", [])
     out = []
@@ -205,7 +221,8 @@ def fetch_event_result(event_id) -> dict | None:
     """
     try:
         r = _session().get(EVENT_URL.format(id=event_id),
-                           impersonate="chrome", timeout=20)
+                           impersonate="chrome",
+                           proxies=_proxies(), timeout=20)
         r.raise_for_status()
         e = r.json().get("event", {})
         st = e.get("status") or {}

@@ -228,23 +228,30 @@ with tab_predict:
 with tab_live:
     st.subheader("Live ATP matches")
     st.caption(
-        "Live ATP singles pulled from Sofascore every 2 minutes and scored "
+        "Live ATP singles pulled from Sofascore every 5 minutes and scored "
         "with the current model. Each fetch is saved to the Archive tab.")
     st.info(
         "Some matches can't be predicted because of not having enough "
         "information about some players.")
 
-    @st.fragment(run_every=timedelta(minutes=2))
+    @st.fragment(run_every=timedelta(minutes=5))
     def _live_loop():
         # fetch -> predict -> persist -> render, on a 2-minute schedule. runs
-        # once immediately on load, then every 2 min while the app is open.
+        # once immediately on load, then every 5 min while the app is open.
         try:
             matches = fetch_live_atp()
         except RuntimeError as exc:
             st.error(str(exc))
             return
         except Exception as exc:
-            st.warning(f"Sofascore request failed: {exc}")
+            msg = str(exc)
+            if "403" in msg:
+                st.warning(
+                    "Sofascore blocked this server's IP (403). Akamai blocks "
+                    "datacenter IPs — set a residential proxy via the "
+                    "SOFASCORE_PROXY env var on the VPS.")
+            else:
+                st.warning(f"Sofascore request failed: {exc}")
             return
         if not matches:
             st.info("No live ATP matches right now.")
@@ -303,7 +310,7 @@ with tab_archive:
     archive = load_archive()
     if archive.empty:
         st.caption("No matches recorded yet. The Live tab records predictions "
-                   "automatically every 2 minutes.")
+                   "automatically every 5 minutes.")
     else:
         archive = archive.copy()
         # robust boolean finished mask (column may be missing/None on old data)
