@@ -22,8 +22,9 @@ MATCHES_PATH = str(DATA_DIR / "elo_matches.parquet")
 MODEL_PATH = str(DATA_DIR / "model.joblib")
 PREDICTIONS_PATH = str(DATA_DIR / "predictions.parquet")
 
-# label shown across the app; the snapshot is end-of-2026 ratings
-RATINGS_AS_OF = "end-2026"
+# label shown across the app; updated by the scheduled refresh from the latest
+# downloaded yearly + ongoing tournament data.
+RATINGS_AS_OF = "latest data"
 
 
 @st.cache_data

@@ -7,7 +7,8 @@ from scripts.build_players import build_players
 
 if __name__ == "__main__":
     build_elo(2010, 2013, 2013, 2027, "./data/elo_matches.parquet",
-              "./data/elo_players.parquet")
+              "./data/elo_players.parquet",
+              extra_real_paths=["./tml-data/ongoing_tourneys.csv"])
     build_panic("./data/elo_matches.parquet",
                 "./data/panic_matches.parquet", "./data/panic_players.parquet")
     build_players("./data/elo_matches.parquet", "./data/elo_players.parquet",

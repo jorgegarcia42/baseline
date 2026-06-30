@@ -5,12 +5,13 @@ from src.load import load_total
 
 
 def build_elo(warmpup_start: int, warmup_end: int, real_start: int, real_end: int,
-              output: str, players_output: str) -> None:
+              output: str, players_output: str,
+              extra_real_paths: list[str] | None = None) -> None:
     # warmup: walk matches, keep state, throw away rows
     warmup_df = load_total(warmpup_start, warmup_end)
     _, state = add_elo_and_streaks(clean_elo(warmup_df))
     # real run from warmup state
-    real_df = load_total(real_start, real_end)
+    real_df = load_total(real_start, real_end, extra_paths=extra_real_paths)
     matches_elo, state = add_elo_and_streaks(clean_elo(real_df), state=state)
     # per-match elo (for ML features)
     matches_elo.to_parquet(output)

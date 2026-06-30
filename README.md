@@ -8,7 +8,7 @@ a machine learning project for predicting atp match outcomes. custom elo ratings
 download_data → build_elo → build_panic → build_features → build_model
 ```
 
-each step writes a parquet into `data/` (gitignored), so later steps read from disk and nothing upstream is recomputed. `main.py` runs `build_elo → build_panic → get_rankings (print) → build_features → build_model` end to end; `download_data` is run once beforehand.
+each step writes a parquet into `data/` (gitignored), so later steps read from disk and nothing upstream is recomputed. `main.py` runs `build_elo → build_panic → get_rankings (print) → build_features → build_model` end to end; `download_data` is run once beforehand. the real match window also appends `tml-data/ongoing_tourneys.csv`, so the saved model and player snapshot include completed matches from tournaments still in progress.
 
 ## elo
 
@@ -106,6 +106,14 @@ python main.py
 ```
 
 builds the elo and panic tables, prints the top 20 by elo, builds `data/features.parquet`, then trains and prints the baseline + full per-fold tables and the `summarize` rollup.
+
+## refresh deployment
+
+```bash
+scripts/refresh_model.sh
+```
+
+downloads the latest tennismylife CSVs, rebuilds elo/streaks/panic/features/model, and restarts `baseline.service` when running under systemd.
 
 ---
 
