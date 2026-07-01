@@ -40,7 +40,10 @@ def elo_series(matches_path: str, player_ids, surface=None) -> pd.DataFrame:
     pid_set = set(player_ids)
     long = pd.concat([w, l], ignore_index=True)
     long = long[long['player_id'].isin(pid_set)]
-    long['date'] = pd.to_datetime(long['tourney_date'].astype(str), format='%Y%m%d')
+    date_values = pd.to_numeric(long['tourney_date'], errors='coerce')
+    long = long[date_values.notna()].copy()
+    long['date'] = pd.to_datetime(date_values[date_values.notna()].astype('int64').astype(str),
+                                  format='%Y%m%d')
     # keep the latest pre-match elo per player per day (a player can play
     # multiple matches in a day)
     long = (long.sort_values(['player_id', 'date'])
