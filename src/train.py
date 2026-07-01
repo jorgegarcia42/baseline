@@ -2,8 +2,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import brier_score_loss, accuracy_score, log_loss
-from sklearn.calibration import calibration_curve, CalibrationDisplay
+from sklearn.metrics import brier_score_loss, accuracy_score
 from sklearn.model_selection import GridSearchCV
 import pandas as pd
 
@@ -90,7 +89,28 @@ def fit_full(df: pd.DataFrame, C: float = 1.0):
     return model
 
 
-def run_full_logistic(train_folds, test_folds, C: float = 1.0):
+def get_best_C(train_folds, test_folds, C_values=list[float], first_test_year: int = 2023, last_test_year: int = 2026, metric: str = 'brier') -> float:
+    rows = []
+    for C in C_values:
+        scores = run_full_logistic(train_folds, test_folds, C)
+        rows.append({
+            'C': C,
+            'accuracy': scores['accuracy'].mean(),
+            'brier': scores['brier'].mean()
+        })
+    results = pd.DataFrame(rows)
+    if metric == 'brier':
+        best = results.loc[results['brier'].idxmin()]
+    elif metric == 'accuracy':
+        best = results.loc[results['accuracy'].idxmax()]
+    else:
+        raise ValueError('metric is invalid')
+    print(results.sort_values(metric, ascending=(metric == 'brier')))
+    print(f"best C: {best['C']}")
+    return float(best['C'])
+
+
+def run_full_logistic(train_folds, test_folds, C: float = 1.0) -> pd.DataFrame:
     # regularized logistic on all features. the ColumnTransformer (scaler + one-hot) is built fresh per fold so it fits on that fold's train only.
     # handle_unknown='ignore' covers categories that only appear in later test years.
     rows = []

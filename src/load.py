@@ -43,4 +43,6 @@ def load_total(first: int, last: int, extra_paths: list[str] | None = None) -> p
     ]
     if all(c in df_total.columns for c in dedupe_cols):
         df_total = df_total.drop_duplicates(subset=dedupe_cols, keep='last')
-    return coerce_numeric(df_total)
+    df_total = coerce_numeric(df_total)
+    required_cols = ['tourney_date', 'match_num', 'winner_id', 'loser_id']
+    return df_total.dropna(subset=required_cols)
