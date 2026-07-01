@@ -7,32 +7,60 @@ def normalize_hand(s: pd.Series) -> pd.Series:
     return s.where(s.isin(['R', 'L']), 'U').astype('object')
 
 
-def build_features(matches_elo_path: str, panic_path: str, output: str) -> None:
+def build_features(matches_elo_path: str, panic_path: str, serve_path: str, output: str) -> None:
     random.seed(69)
 
     matches_elo = pd.read_parquet(matches_elo_path)
     panic = pd.read_parquet(panic_path)
+    serve = pd.read_parquet(serve_path)
+
     # cleaning so there cant be NaN = NaN
     matches_elo = matches_elo.dropna(subset=['match_num'])
     panic = panic.dropna(subset=['match_num'])
     panic = panic.drop_duplicates(
         subset=['player_id', 'tourney_date', 'match_num'])
+    serve = serve.dropna(subset=['match_num'])
+    serve = serve.drop_duplicates(
+        subset=['player_id', 'tourney_date', 'match_num'])
 
     # creating the full dataset
     panic_w = panic.rename(columns={'panic_roll50': 'w_panic_roll50'})
     panic_l = panic.rename(columns={'panic_roll50': 'l_panic_roll50'})
+    serve_w = serve[['player_id', 'tourney_date', 'match_num',
+                     'ace_ratio_roll10']].rename(
+                         columns={'ace_ratio_roll10': 'w_ace_ratio_roll10'})
+    serve_l = serve[['player_id', 'tourney_date', 'match_num',
+                     'ace_ratio_roll10']].rename(
+                         columns={'ace_ratio_roll10': 'l_ace_ratio_roll10'})
     key_left = ['winner_id', 'tourney_date', 'match_num']
     key_right = ['player_id', 'tourney_date', 'match_num']
     partial = pd.merge(matches_elo, panic_w,
                        left_on=key_left, right_on=key_right, how='left')
-    full = pd.merge(partial, panic_l, left_on=['loser_id', 'tourney_date', 'match_num'],
-                    right_on=['player_id', 'tourney_date', 'match_num'], how='left')
+    partial = partial.drop(columns=['player_id'])
+
+    partial = pd.merge(partial, panic_l,
+                       left_on=['loser_id', 'tourney_date', 'match_num'],
+                       right_on=key_right, how='left')
+    partial = partial.drop(columns=['player_id'])
+
+    partial = pd.merge(partial, serve_w,
+                       left_on=key_left, right_on=key_right, how='left')
+    partial = partial.drop(columns=['player_id'])
+
+    full = pd.merge(partial, serve_l,
+                    left_on=['loser_id', 'tourney_date', 'match_num'],
+                    right_on=key_right, how='left')
+    full = full.drop(columns=['player_id'])
 
     # filling empty fields with default values
     full['w_panic_roll50'] = full['w_panic_roll50'].fillna(0.5)
     full['l_panic_roll50'] = full['l_panic_roll50'].fillna(0.5)
     full['w_surface_elo_pre'] = full['w_surface_elo_pre'].fillna(1500)
     full['l_surface_elo_pre'] = full['l_surface_elo_pre'].fillna(1500)
+    full['w_ace_ratio_roll10'] = full['w_ace_ratio_roll10'].fillna(
+        serve['ace_ratio'].mean())
+    full['l_ace_ratio_roll10'] = full['l_ace_ratio_roll10'].fillna(
+        serve['ace_ratio'].mean())
     full['winner_rank'] = full['winner_rank'].fillna(1500)
     full['loser_rank'] = full['loser_rank'].fillna(1500)
     age_med = full['winner_age'].median()
@@ -67,6 +95,8 @@ def build_features(matches_elo_path: str, panic_path: str, output: str) -> None:
             player1_won = 1
             player1_panic = match['w_panic_roll50']
             player2_panic = match['l_panic_roll50']
+            player1_ace_ratio = match['w_ace_ratio_roll10']
+            player2_ace_ratio = match['l_ace_ratio_roll10']
         else:
             player1_id = match['loser_id']
             player2_id = match['winner_id']
@@ -85,6 +115,8 @@ def build_features(matches_elo_path: str, panic_path: str, output: str) -> None:
             player1_won = 0
             player1_panic = match['l_panic_roll50']
             player2_panic = match['w_panic_roll50']
+            player1_ace_ratio = match['l_ace_ratio_roll10']
+            player2_ace_ratio = match['w_ace_ratio_roll10']
         match_info = {
             'player1_id': player1_id,  # informative
             'player2_id': player2_id,  # informative
@@ -108,6 +140,8 @@ def build_features(matches_elo_path: str, panic_path: str, output: str) -> None:
             'player2_streak': player2_streak,  # feature
             'player1_panic': player1_panic,  # feature
             'player2_panic': player2_panic,  # feature
+            'player1_ace_ratio': player1_ace_ratio,  # feature
+            'player2_ace_ratio': player2_ace_ratio,  # feature
             'player1_won': player1_won  # label
         }
         matches.append(match_info)

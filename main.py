@@ -1,5 +1,6 @@
 from scripts.build_features import build_features
 from scripts.build_model import build_model
+from scripts.build_serve import build_serve
 from scripts.get_ranking import get_rankings
 from scripts.build_elo import build_elo
 from scripts.build_panic import build_panic
@@ -11,9 +12,11 @@ if __name__ == "__main__":
               extra_real_paths=["./tml-data/ongoing_tourneys.csv"])
     build_panic("./data/elo_matches.parquet",
                 "./data/panic_matches.parquet", "./data/panic_players.parquet")
+    build_serve("./data/elo_matches.parquet",
+                "./data/serve_matches.parquet", "./data/serve.players.parquet")
     build_players("./data/elo_matches.parquet", "./data/elo_players.parquet",
                   "./data/panic_players.parquet", "./data/players.parquet")
     print(get_rankings("./data/elo_players.parquet"))
     build_features("./data/elo_matches.parquet",
-                   "./data/panic_matches.parquet", "./data/features.parquet")
+                   "./data/panic_matches.parquet", "./data/serve_matches.parquet", "./data/features.parquet")
     build_model("./data/features.parquet", 2023, 2026)

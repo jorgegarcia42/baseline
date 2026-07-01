@@ -5,10 +5,10 @@ a machine learning project for predicting atp match outcomes. custom elo ratings
 ## pipeline
 
 ```
-download_data → build_elo → build_panic → build_features → build_model
+download_data → build_elo → build_panic → build_serve → build_features → build_model
 ```
 
-each step writes a parquet into `data/` (gitignored), so later steps read from disk and nothing upstream is recomputed. `main.py` runs `build_elo → build_panic → get_rankings (print) → build_features → build_model` end to end; `download_data` is run once beforehand. the real match window also appends `tml-data/ongoing_tourneys.csv`, so the saved model and player snapshot include completed matches from tournaments still in progress.
+each step writes a parquet into `data/` (gitignored), so later steps read from disk and nothing upstream is recomputed. `main.py` runs `build_elo → build_panic → build_serve → get_rankings (print) → build_features → build_model` end to end; `download_data` is run once beforehand. the real match window also appends `tml-data/ongoing_tourneys.csv`, so the saved model and player snapshot include completed matches from tournaments still in progress.
 
 ## elo
 
@@ -68,11 +68,21 @@ where `bp_raw = 1 - bpSaved/bpFaced` (0.5 if no break points faced) and `m_norm 
 
 retirements and matches with missing `bpFaced`/`minutes` are dropped. the model uses the rolling mean over each player's last 50 matches (min 20 priors, strictly before the match via `shift(1)`). outputs: `panic_matches.parquet` (per-player-per-match with `panic_roll50`) and `panic_players.parquet` (latest snapshot per player).
 
+## serve
+
+a per-player serve-strength feature based on aces per service game:
+
+```
+ace_ratio = aces / service_games
+```
+
+matches with missing ace or service-game data are dropped for this table. the model uses each player's rolling mean over their last 10 matches (min 3 priors, strictly before the match via `shift(1)`), so a match never uses its own serve stats as an input. outputs: `serve_matches.parquet` (per-player-per-match with `ace_ratio_roll10`) and `serve_players.parquet` (latest snapshot per player).
+
 ## features
 
 one row per match in `data/features.parquet`, with the two players randomly assigned to player1/player2 and the label `player1_won` (so the model can't lean on winner/loser column position).
 
-columns: informative (`player1_id`, `player2_id`, `date`); categoricals (`level`, `surface`, `indoor`, `round`, `player1_hand`, `player2_hand`); numeric raw pairs (`player1_surface_elo`/`player2_surface_elo`, `player1_elo`/`player2_elo`, `player1_streak`/`player2_streak`, `player1_rank`/`player2_rank`, `player1_age`/`player2_age`, `player1_panic`/`player2_panic`); and the diffs `surface_elo_diff` and `elo_diff` (used by the baseline only). NaN fills: panic 0.5, surface_elo 1500, rank 1500, age (median). rows with NaN `match_num` are dropped and panic is deduped on `(player_id, tourney_date, match_num)` before the join.
+columns: informative (`player1_id`, `player2_id`, `date`); categoricals (`level`, `surface`, `indoor`, `round`, `player1_hand`, `player2_hand`); numeric raw pairs (`player1_surface_elo`/`player2_surface_elo`, `player1_elo`/`player2_elo`, `player1_streak`/`player2_streak`, `player1_rank`/`player2_rank`, `player1_age`/`player2_age`, `player1_panic`/`player2_panic`, `player1_ace_ratio`/`player2_ace_ratio`); and the diffs `surface_elo_diff` and `elo_diff` (used by the baseline only). NaN fills: panic 0.5, serve ace ratio (global mean), surface_elo 1500, rank 1500, age (median). rows with NaN `match_num` are dropped and panic/serve are deduped on `(player_id, tourney_date, match_num)` before the join.
 
 ## training
 
@@ -105,7 +115,7 @@ pandas, requests, pyarrow, scikit-learn.
 python main.py
 ```
 
-builds the elo and panic tables, prints the top 20 by elo, builds `data/features.parquet`, then trains and prints the baseline + full per-fold tables and the `summarize` rollup.
+builds the elo, panic, and serve tables, prints the top 20 by elo, builds `data/features.parquet`, then trains and prints the baseline + full per-fold tables and the `summarize` rollup.
 
 ## refresh deployment
 
@@ -113,7 +123,7 @@ builds the elo and panic tables, prints the top 20 by elo, builds `data/features
 scripts/refresh_model.sh
 ```
 
-downloads the latest tennismylife CSVs, rebuilds elo/streaks/panic/features/model, and restarts `baseline.service` when running under systemd.
+downloads the latest tennismylife CSVs, rebuilds elo/streaks/panic/serve/features/model, and restarts `baseline.service` when running under systemd.
 
 ---
 

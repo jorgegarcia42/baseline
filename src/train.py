@@ -14,6 +14,7 @@ numeric_features = [
     'player1_rank', 'player2_rank',
     'player1_age', 'player2_age',
     'player1_panic', 'player2_panic',
+    'player1_ace_ratio', 'player2_ace_ratio'
 ]
 categorical_features = ['level', 'surface', 'indoor', 'round',
                         'player1_hand', 'player2_hand']
